@@ -2,5 +2,6 @@
   cmds = ["npm install", "npm run build"]
 
 [start]
-  command = "npm run start"
+  cmd = "NODE_ENV=production node dist/index.js"
+
 
