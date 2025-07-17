@@ -1,0 +1,241 @@
+{
+  "project": {
+    "name": "YouTube Shorts AI Studio",
+    "description": "A full-stack web application for automating YouTube Shorts content creation with AI-powered scripts, voice synthesis, video rendering, and thumbnail creation.",
+    "version": "1.0.0",
+    "type": "module",
+    "architecture": "React + Express + PostgreSQL + Drizzle ORM"
+  },
+  "package.json": {
+    "name": "rest-express",
+    "version": "1.0.0",
+    "type": "module",
+    "license": "MIT",
+    "scripts": {
+      "dev": "NODE_ENV=development tsx server/index.ts",
+      "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+      "start": "NODE_ENV=production node dist/index.js",
+      "check": "tsc",
+      "db:push": "drizzle-kit push"
+    },
+    "dependencies": {
+      "@google/genai": "^1.10.0",
+      "@hookform/resolvers": "^3.10.0",
+      "@neondatabase/serverless": "^0.10.4",
+      "@radix-ui/react-*": "Various UI components",
+      "@tanstack/react-query": "^5.60.5",
+      "express": "^4.21.2",
+      "drizzle-orm": "^0.39.1",
+      "react": "^18.3.1",
+      "react-dom": "^18.3.1",
+      "typescript": "5.6.3",
+      "tailwindcss": "^3.4.17",
+      "wouter": "^3.3.5",
+      "nodemailer": "^7.0.5",
+      "node-cron": "^4.2.1",
+      "passport": "^0.7.0",
+      "other dependencies": "See full package.json"
+    }
+  },
+  "configuration": {
+    "tsconfig.json": {
+      "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
+      "compilerOptions": {
+        "module": "ESNext",
+        "strict": true,
+        "jsx": "preserve",
+        "baseUrl": ".",
+        "paths": {
+          "@/*": ["./client/src/*"],
+          "@shared/*": ["./shared/*"]
+        }
+      }
+    },
+    "vite.config.ts": {
+      "plugins": ["react", "runtimeErrorOverlay"],
+      "resolve": {
+        "alias": {
+          "@": "client/src",
+          "@shared": "shared",
+          "@assets": "attached_assets"
+        }
+      }
+    },
+    "tailwind.config.ts": {
+      "darkMode": ["class"],
+      "theme": {
+        "extend": {
+          "colors": {
+            "youtube-red": "hsl(0, 100%, 50%)",
+            "dark-bg": "hsl(0, 0%, 5.9%)",
+            "dark-card": "hsl(0, 0%, 15.3%)"
+          }
+        }
+      }
+    }
+  },
+  "backend": {
+    "server/index.ts": "import express, { type Request, Response, NextFunction } from \"express\";\nimport { registerRoutes } from \"./routes\";\nimport { setupVite, serveStatic, log } from \"./vite\";\n\nconst app = express();\napp.use(express.json());\napp.use(express.urlencoded({ extended: false }));\n\napp.use((req, res, next) => {\n  const start = Date.now();\n  const path = req.path;\n  let capturedJsonResponse: Record<string, any> | undefined = undefined;\n\n  const originalResJson = res.json;\n  res.json = function (bodyJson, ...args) {\n    capturedJsonResponse = bodyJson;\n    return originalResJson.apply(res, [bodyJson, ...args]);\n  };\n\n  res.on(\"finish\", () => {\n    const duration = Date.now() - start;\n    if (path.startsWith(\"/api\")) {\n      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;\n      if (capturedJsonResponse) {\n        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;\n      }\n\n      if (logLine.length > 80) {\n        logLine = logLine.slice(0, 79) + \"…\";\n      }\n\n      log(logLine);\n    }\n  });\n\n  next();\n});\n\n(async () => {\n  const server = await registerRoutes(app);\n\n  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {\n    const status = err.status || err.statusCode || 500;\n    const message = err.message || \"Internal Server Error\";\n\n    res.status(status).json({ message });\n    throw err;\n  });\n\n  if (app.get(\"env\") === \"development\") {\n    await setupVite(app, server);\n  } else {\n    serveStatic(app);\n  }\n\n  const port = parseInt(process.env.PORT || '5000', 10);\n  server.listen({\n    port,\n    host: \"0.0.0.0\",\n    reusePort: true,\n  }, () => {\n    log(`serving on port ${port}`);\n  });\n})();",
+    "server/db.ts": "import { Pool, neonConfig } from '@neondatabase/serverless';\nimport { drizzle } from 'drizzle-orm/neon-serverless';\nimport ws from \"ws\";\nimport * as schema from \"@shared/schema\";\n\nneonConfig.webSocketConstructor = ws;\n\nif (!process.env.DATABASE_URL) {\n  throw new Error(\n    \"DATABASE_URL must be set. Did you forget to provision a database?\",\n  );\n}\n\nexport const pool = new Pool({ connectionString: process.env.DATABASE_URL });\nexport const db = drizzle({ client: pool, schema });",
+    "server/routes.ts": "// Complete API routes for authentication, content, dashboard stats, schedules, analytics, etc.",
+    "server/storage.ts": "// Database storage implementation with Drizzle ORM",
+    "server/replitAuth.ts": "// Replit OIDC authentication setup with Passport.js",
+    "server/services/automationService.ts": "// Automation pipeline service with cron scheduling",
+    "server/services/emailService.ts": "// Email notification service using nodemailer",
+    "server/services/gemini.ts": "// Google Gemini AI integration for script and thumbnail generation"
+  },
+  "database": {
+    "shared/schema.ts": "import {\n  pgTable,\n  text,\n  varchar,\n  timestamp,\n  jsonb,\n  index,\n  serial,\n  boolean,\n  integer,\n} from \"drizzle-orm/pg-core\";\nimport { createInsertSchema } from \"drizzle-zod\";\nimport { z } from \"zod\";\n\n// Session storage table (mandatory for Replit Auth)\nexport const sessions = pgTable(\n  \"sessions\",\n  {\n    sid: varchar(\"sid\").primaryKey(),\n    sess: jsonb(\"sess\").notNull(),\n    expire: timestamp(\"expire\").notNull(),\n  },\n  (table) => [index(\"IDX_session_expire\").on(table.expire)],\n);\n\n// User storage table (mandatory for Replit Auth)\nexport const users = pgTable(\"users\", {\n  id: varchar(\"id\").primaryKey().notNull(),\n  email: varchar(\"email\").unique(),\n  firstName: varchar(\"first_name\"),\n  lastName: varchar(\"last_name\"),\n  profileImageUrl: varchar(\"profile_image_url\"),\n  createdAt: timestamp(\"created_at\").defaultNow(),\n  updatedAt: timestamp(\"updated_at\").defaultNow(),\n});\n\n// Content pieces (generated videos)\nexport const content = pgTable(\"content\", {\n  id: serial(\"id\").primaryKey(),\n  userId: varchar(\"user_id\").notNull().references(() => users.id),\n  title: text(\"title\").notNull(),\n  script: text(\"script\").notNull(),\n  videoUrl: text(\"video_url\"),\n  thumbnailUrl: text(\"thumbnail_url\"),\n  audioUrl: text(\"audio_url\"),\n  status: varchar(\"status\").notNull().default(\"pending\"), // pending, processing, completed, failed\n  createdAt: timestamp(\"created_at\").defaultNow(),\n  updatedAt: timestamp(\"updated_at\").defaultNow(),\n});\n\n// Automation schedules\nexport const schedules = pgTable(\"schedules\", {\n  id: serial(\"id\").primaryKey(),\n  userId: varchar(\"user_id\").notNull().references(() => users.id),\n  name: text(\"name\").notNull(),\n  cronExpression: text(\"cron_expression\").notNull(),\n  isActive: boolean(\"is_active\").default(true),\n  lastRun: timestamp(\"last_run\"),\n  nextRun: timestamp(\"next_run\"),\n  createdAt: timestamp(\"created_at\").defaultNow(),\n  updatedAt: timestamp(\"updated_at\").defaultNow(),\n});\n\n// System logs for tracking automation activity\nexport const systemLogs = pgTable(\"system_logs\", {\n  id: serial(\"id\").primaryKey(),\n  userId: varchar(\"user_id\").references(() => users.id),\n  contentId: integer(\"content_id\").references(() => content.id),\n  level: varchar(\"level\").notNull(), // info, warning, error, success\n  message: text(\"message\").notNull(),\n  metadata: jsonb(\"metadata\"),\n  createdAt: timestamp(\"created_at\").defaultNow(),\n});\n\n// Analytics data\nexport const analytics = pgTable(\"analytics\", {\n  id: serial(\"id\").primaryKey(),\n  userId: varchar(\"user_id\").notNull().references(() => users.id),\n  date: timestamp(\"date\").defaultNow(),\n  videosGenerated: integer(\"videos_generated\").default(0),\n  successRate: integer(\"success_rate\").default(0),\n  apiCreditsUsed: integer(\"api_credits_used\").default(0),\n  totalProcessingTime: integer(\"total_processing_time\").default(0), // in seconds\n});\n\nexport type UpsertUser = typeof users.$inferInsert;\nexport type User = typeof users.$inferSelect;\nexport type InsertContent = typeof content.$inferInsert;\nexport type Content = typeof content.$inferSelect;\nexport type InsertSchedule = typeof schedules.$inferInsert;\nexport type Schedule = typeof schedules.$inferSelect;\nexport type InsertSystemLog = typeof systemLogs.$inferInsert;\nexport type SystemLog = typeof systemLogs.$inferSelect;\nexport type InsertAnalytics = typeof analytics.$inferInsert;\nexport type Analytics = typeof analytics.$inferSelect;\n\nexport const insertContentSchema = createInsertSchema(content).omit({\n  id: true,\n  createdAt: true,\n  updatedAt: true,\n});\n\nexport const insertScheduleSchema = createInsertSchema(schedules).omit({\n  id: true,\n  createdAt: true,\n  updatedAt: true,\n});\n\nexport const insertSystemLogSchema = createInsertSchema(systemLogs).omit({\n  id: true,\n  createdAt: true,\n});"
+  },
+  "frontend": {
+    "client/index.html": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.tsx\"></script>\n    <script type=\"text/javascript\" src=\"https://replit.com/public/js/replit-dev-banner.js\"></script>\n  </body>\n</html>",
+    "client/src/main.tsx": "import { createRoot } from \"react-dom/client\";\nimport App from \"./App\";\nimport \"./index.css\";\n\ncreateRoot(document.getElementById(\"root\")!).render(<App />);",
+    "client/src/App.tsx": "// React Router setup with authentication, pages, and providers",
+    "client/src/index.css": "// Tailwind CSS with custom YouTube dark theme variables",
+    "pages": {
+      "Dashboard.tsx": "// Main dashboard with automation pipeline, stats, and controls",
+      "ContentLibrary.tsx": "// Video library management",
+      "Analytics.tsx": "// Performance analytics and metrics",
+      "Settings.tsx": "// User settings and configuration",
+      "Landing.tsx": "// Landing page for unauthenticated users"
+    },
+    "components": {
+      "Layout.tsx": "// Main layout with sidebar navigation",
+      "StatusCard.tsx": "// Reusable status card component",
+      "PipelineStep.tsx": "// Automation pipeline step component",
+      "VideoCard.tsx": "// Video display card component",
+      "WorkflowModal.tsx": "// Modal for workflow JSON display",
+      "ui/": "// Shadcn/ui component library"
+    },
+    "hooks": {
+      "useAuth.ts": "// Authentication hook with TanStack Query",
+      "use-toast.ts": "// Toast notification hook",
+      "use-mobile.tsx": "// Mobile device detection"
+    },
+    "lib": {
+      "queryClient.ts": "// TanStack Query client configuration",
+      "authUtils.ts": "// Authentication utility functions",
+      "utils.ts": "// General utility functions"
+    }
+  },
+  "features": {
+    "authentication": {
+      "provider": "Replit OIDC",
+      "session_storage": "PostgreSQL",
+      "middleware": "Passport.js"
+    },
+    "content_generation": {
+      "script_ai": "Google Gemini AI",
+      "voice_synthesis": "TTSMP3 API",
+      "video_rendering": "JSON2Video API",
+      "thumbnail_creation": "Gemini Image Generation"
+    },
+    "automation": {
+      "scheduling": "Node-cron",
+      "pipeline_management": "Multi-step automation service",
+      "email_notifications": "Nodemailer with Gmail SMTP",
+      "progress_tracking": "Real-time status updates"
+    },
+    "ui_framework": {
+      "frontend": "React 18 with TypeScript",
+      "styling": "Tailwind CSS + Shadcn/ui",
+      "routing": "Wouter",
+      "state_management": "TanStack Query",
+      "theme": "Dark YouTube-inspired design"
+    }
+  },
+  "api_endpoints": {
+    "authentication": [
+      "GET /api/auth/user",
+      "GET /api/login",
+      "GET /api/callback",
+      "GET /api/logout"
+    ],
+    "content": [
+      "GET /api/content",
+      "POST /api/content",
+      "GET /api/content/:id/steps"
+    ],
+    "automation": [
+      "POST /api/automation/run"
+    ],
+    "dashboard": [
+      "GET /api/dashboard/stats"
+    ],
+    "schedules": [
+      "GET /api/schedules",
+      "POST /api/schedules"
+    ],
+    "analytics": [
+      "GET /api/analytics"
+    ],
+    "system": [
+      "GET /api/logs",
+      "GET /api/workflow/json"
+    ]
+  },
+  "environment_variables": {
+    "required": [
+      "DATABASE_URL",
+      "REPL_ID",
+      "REPLIT_DOMAINS",
+      "SESSION_SECRET",
+      "GEMINI_API_KEY",
+      "EMAIL_USER",
+      "EMAIL_PASS"
+    ],
+    "optional": [
+      "GOOGLE_AI_API_KEY",
+      "GMAIL_USER",
+      "GMAIL_PASS",
+      "ISSUER_URL"
+    ]
+  },
+  "deployment": {
+    "development": "npm run dev",
+    "build": "npm run build",
+    "production": "npm start",
+    "database_migration": "npm run db:push",
+    "platform": "Replit with automatic deployment"
+  },
+  "external_services": {
+    "database": "Neon PostgreSQL",
+    "ai_services": [
+      "Google Gemini (Script & Thumbnail Generation)",
+      "TTSMP3 (Voice Synthesis)",
+      "JSON2Video (Video Rendering)"
+    ],
+    "email": "Gmail SMTP",
+    "authentication": "Replit OIDC"
+  },
+  "workflow_automation": {
+    "schedule": "Daily at 8:00 AM",
+    "steps": [
+      "1. Generate script using Gemini AI",
+      "2. Create voice audio using TTSMP3",
+      "3. Render video using JSON2Video",
+      "4. Generate thumbnail using Gemini",
+      "5. Send email notification",
+      "6. Update analytics"
+    ]
+  },
+  "key_files_content": {
+    "server/services/emailService.ts": "import nodemailer from 'nodemailer';\n\ninterface EmailOptions {\n  to: string;\n  subject: string;\n  html: string;\n}\n\nclass EmailService {\n  private transporter: nodemailer.Transporter;\n\n  constructor() {\n    this.transporter = nodemailer.createTransport({\n      service: 'gmail',\n      auth: {\n        user: process.env.EMAIL_USER || process.env.GMAIL_USER,\n        pass: process.env.EMAIL_PASS || process.env.GMAIL_PASS,\n      },\n    });\n  }\n\n  async sendEmail(options: EmailOptions): Promise<boolean> {\n    try {\n      await this.transporter.sendMail({\n        from: process.env.EMAIL_USER || process.env.GMAIL_USER,\n        to: options.to,\n        subject: options.subject,\n        html: options.html,\n      });\n      return true;\n    } catch (error) {\n      console.error('Failed to send email:', error);\n      return false;\n    }\n  }\n\n  async sendContentNotification(contentTitle: string, videoUrl: string, status: string): Promise<boolean> {\n    const html = `\n      <div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n        <h2 style=\"color: #FF0000;\">🎬 New YouTube Short Generated!</h2>\n        <div style=\"background: #f5f5f5; padding: 20px; border-radius: 8px;\">\n          <p><strong>Title:</strong> ${contentTitle}</p>\n          <p><strong>Status:</strong> ${status}</p>\n          ${videoUrl ? `<p><strong>Video URL:</strong> <a href=\"${videoUrl}\">${videoUrl}</a></p>` : ''}\n          <p><strong>Generated at:</strong> ${new Date().toLocaleString()}</p>\n        </div>\n        <p style=\"margin-top: 20px; color: #666;\">\n          This is an automated notification from your YouTube Shorts AI Studio.\n        </p>\n      </div>\n    `;\n\n    return await this.sendEmail({\n      to: 'mayoaiagent@gmail.com',\n      subject: '🎬 New YouTube Short Created Successfully!',\n      html,\n    });\n  }\n\n  async sendErrorNotification(error: string, context: string): Promise<boolean> {\n    const html = `\n      <div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;\">\n        <h2 style=\"color: #CC0000;\">⚠️ YouTube Shorts Automation Error</h2>\n        <div style=\"background: #fff5f5; padding: 20px; border-radius: 8px; border-left: 4px solid #CC0000;\">\n          <p><strong>Error:</strong> ${error}</p>\n          <p><strong>Context:</strong> ${context}</p>\n          <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>\n        </div>\n        <p style=\"margin-top: 20px; color: #666;\">\n          Please check your automation workflow and API configurations.\n        </p>\n      </div>\n    `;\n\n    return await this.sendEmail({\n      to: 'mayoaiagent@gmail.com',\n      subject: '⚠️ YouTube Shorts Automation Error',\n      html,\n    });\n  }\n}\n\nexport const emailService = new EmailService();",
+    "server/services/gemini.ts": "import { GoogleGenAI } from \"@google/genai\";\n\nconst ai = new GoogleGenAI({ \n  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || \"\" \n});\n\nexport async function generateScript(): Promise<string> {\n  const prompt = `Write a 60-second script for a YouTube Short about an unsolved spiritual mystery or mythology. Use a storytelling hook and end with a cliffhanger. Keep it under 150 words and make it engaging for a young audience.`;\n\n  const response = await ai.models.generateContent({\n    model: \"gemini-2.5-flash\",\n    contents: prompt,\n  });\n\n  return response.text || \"Failed to generate script\";\n}\n\nexport async function generateThumbnailPrompt(script: string): Promise<string> {\n  const prompt = `Create a detailed description for a YouTube thumbnail based on this script: \"${script}\". Make it eye-catching with mysterious elements, glowing effects, and dramatic visuals. The thumbnail should be in 16:9 aspect ratio and attract viewers interested in spiritual mysteries and mythology.`;\n\n  const response = await ai.models.generateContent({\n    model: \"gemini-2.5-flash\",\n    contents: prompt,\n  });\n\n  return response.text || \"Eye-catching thumbnail with glowing runes and hidden mysteries, 16:9\";\n}\n\nexport async function generateThumbnailImage(prompt: string): Promise<Buffer | null> {\n  try {\n    const response = await ai.models.generateContent({\n      model: \"gemini-2.0-flash-preview-image-generation\",\n      contents: [{ role: \"user\", parts: [{ text: prompt }] }],\n      config: {\n        responseModalities: [\"TEXT\", \"IMAGE\"],\n      },\n    });\n\n    const candidates = response.candidates;\n    if (!candidates || candidates.length === 0) {\n      return null;\n    }\n\n    const content = candidates[0].content;\n    if (!content || !content.parts) {\n      return null;\n    }\n\n    for (const part of content.parts) {\n      if (part.inlineData && part.inlineData.data) {\n        return Buffer.from(part.inlineData.data, \"base64\");\n      }\n    }\n\n    return null;\n  } catch (error) {\n    console.error(\"Failed to generate thumbnail image:\", error);\n    return null;\n  }\n}"
+  },
+  "installation_instructions": {
+    "1": "Clone or download this project structure",
+    "2": "Run 'npm install' to install dependencies",
+    "3": "Set up environment variables (DATABASE_URL, API keys, etc.)",
+    "4": "Run 'npm run db:push' to set up database schema",
+    "5": "Run 'npm run dev' for development or 'npm run build && npm start' for production",
+    "6": "Configure external API keys for Gemini, email, and video services"
+  },
+  "recent_fixes": {
+    "july_17_2025": [
+      "Fixed nodemailer integration: Changed createTransporter to createTransport",
+      "Fixed Drizzle ORM query building: Resolved analytics query chaining issue",
+      "Application now starts successfully on port 5000"
+    ]
+  }
+}
