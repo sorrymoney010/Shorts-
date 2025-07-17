@@ -4,4 +4,5 @@
 [start]
   cmd = "npm run start"
 
-
+[build]
+  packages = ["nodejs-18_x"]
